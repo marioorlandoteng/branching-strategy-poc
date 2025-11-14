@@ -1,0 +1,55 @@
+name: Enforce Branch Rules
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  validate-branch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Validate branch rules
+        run: |
+          set -e
+
+          TARGET="${{ github.event.pull_request.base.ref }}"
+          SOURCE="${{ github.event.pull_request.head.ref }}"
+
+          echo "Source branch: $SOURCE"
+          echo "Target branch: $TARGET"
+
+          # Rule 1: Only feature-* can merge into dev/uat
+          if [[ "$TARGET" == "dev" || "$TARGET" == "uat" ]]; then
+            if [[ ! "$SOURCE" =~ ^feature- ]]; then
+              echo "❌ Only branches starting with 'feature-' can be merged into $TARGET."
+              exit 1
+            fi
+          fi
+
+          # Rule 2: feature-* must be branched from main
+          if [[ "$SOURCE" =~ ^feature- ]]; then
+            git fetch origin main
+            BASE=$(git merge-base origin/main HEAD)
+            MAIN_HEAD=$(git rev-parse origin/main)
+
+            if [[ "$BASE" != "$MAIN_HEAD" ]]; then
+              echo "❌ feature-* branches must be branched from main."
+              exit 1
+            fi
+          fi
+
+          # Rule 3: Only UAT can merge into main
+          if [[ "$TARGET" == "main" ]]; then
+            if [[ "$SOURCE" != "uat" ]]; then
+              echo "❌ Only the uat branch can be merged into main."
+              exit 1
+            fi
+          fi
+
+          echo "✔ All branch rules passed."
